@@ -6,7 +6,7 @@ DOS Punk Text is a Python 3 script that converts a DOS Punk image into a text fi
 
 The characters in the DOS Punk image are matched against a unicode version of the original DOS Code Page 437 character set using the Hamming distance between average image hashes.
 
-![Alt text](/screenshot.jpg?raw=true)
+![Alt text](/screenshots/screenshot_1.jpg?raw=true)
 
 #DOSLIFE 
 

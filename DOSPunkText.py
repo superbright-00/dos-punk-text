@@ -64,7 +64,7 @@ def create_char_image(char_code):
     return image      
 
 # create an image for each character in the font and store
-# the average hash of the image against the unicode value
+# the average hash of the image against the unicode 
 def create_font_blocks():
     # create images of non-blank characters from the font
     for char_code in range(0x005D, 0x0266C):
@@ -159,8 +159,8 @@ def match_blocks():
                 char = chr(key)
                 invert = True
             
-        # special case - try to work out wether or not a space 
-        # character should be inverted 
+        # special case - try to work out whether a space 
+        # character should be rendered with reverse video
         if (ord(char) == 160):
             clrs = image.getcolors()
             if (clrs[0][1] < 30):
