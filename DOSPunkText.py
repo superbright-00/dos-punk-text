@@ -67,7 +67,7 @@ def create_char_image(char_code):
 # the average hash of the image against the unicode 
 def create_font_blocks():
     # create images of non-blank characters from the font
-    for char_code in range(0x005D, 0x0266C):
+    for char_code in range(0x0021, 0x0266C):
       image = create_char_image(char_code)
       image = image.convert("L")
       clrs = image.getcolors()
