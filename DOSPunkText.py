@@ -1,14 +1,16 @@
 import os
 import sys
 import platform
-from PIL import Image, ImageOps, ImageFont, ImageDraw, ImageEnhance
+import types
+import json
+from PIL import Image, ImageOps, ImageFont, ImageDraw, ImageEnhance 
+if sys.platform != 'Windows':
+    from colortrans import rgb2short
 
 char_font = ImageFont.truetype("BlockZone.ttf", 160) # font used for matching
-font_hashes = {}      # dictionary - key = unicode chr, value = average hash of font char
+font_blocks = {}      # dictionary - key = unicode char, value = font record (hash, fg, bg)
 image_blocks = []     # array of images - the dos punk image split into charcter blocks 
-invert_enabled = True # flag - use reverse video when outputting chrs to the console
 debug = False         # save the font & image blocks created for debugging
-filename = ""         # filename of the DOS Punk Image
 
 dirname = os.path.dirname(__file__)
 dir_punk_blocks = os.path.join(dirname, 'punk-blocks')
@@ -59,39 +61,55 @@ def create_char_image(char_code):
     image = Image.new('RGB', (80, 160), color = 'white')
     char = chr(char_code)
     draw = ImageDraw.Draw(image)
-    draw.text((0, -1), char, font=char_font, fill=(0,0,0))
+    draw.text((0, 0), char, font=char_font, fill=(0,0,0))
     image = image.convert('L')
     return image      
 
+# Returns the first pixel that matches the color
+def get_pixel_by_color(image, color):
+    for y in range(0, image.height):
+        for x in range(0, image.width):
+            if (image.getpixel((x,y)) == color):
+                return ((x,y))
+    return ((-1,-1))
+
+# Creates a font record
+def create_font_record(image):
+    rec = types.SimpleNamespace()
+    rec.hash = average_hash(image)
+    rec.fg_pixel = get_pixel_by_color(image, 0) # fg pixel xy
+    rec.bg_pixel = get_pixel_by_color(image, 255) # bg pixel xy
+    return rec
+  
 # create an image for each character in the font and store
 # the average hash of the image against the unicode 
 def create_font_blocks():
     # create images of non-blank characters from the font
-    for char_code in range(0x005D, 0x0266C):
+    for char_code in range(0x0021, 0x0266C):
       image = create_char_image(char_code)
       image = image.convert("L")
       clrs = image.getcolors()
       if (len(clrs)>1): 
-          font_hashes[char_code] = average_hash(image)
+          font_blocks[char_code] = create_font_record(image)
           if debug:
               image.save(f"{dir_font_blocks}/{char_code}.png")
     # add the space character back in
     image = create_char_image(0x00A0)
     image = image.convert("L")
-    ##image.save(f"{dir_match}/{0x00A0}.png")
-    font_hashes[0x00A0] = average_hash(image)
+    font_blocks[0x00A0] = create_font_record(image)
+        
 
 # split the DOS punk image up into chracter blocks
 # width 80, height 160 in 
 def create_punk_blocks(filename):
-    image = Image.open(filename).convert("L")
+    image = Image.open(filename).convert('RGB')
 
     # check image is correct reolution
     if (image.width != 1280) or (image.height != 1280):
         print('Please supply the 1280x1280 image of your DOS Punk!')
         sys.exit()
 
-    # split image up intp blocks
+    # split image up into blocks
     block_num = 1
     for y in range(0, 1280, 160):
         for x in range(0, 1280, 80): 
@@ -109,67 +127,68 @@ def check_relative_filename(filename):
            filename = relative
     return(filename)
 
+# print coloured chracter to the console
+def print_color(char, fg, bg):
+    if platform.system() == 'Windows':
+       ## rgb escape code  works on windows console
+       sys.stdout.write("\033[38;2;{};{};{}m".format(fg[0], fg[1], fg[2]))
+       sys.stdout.write("\033[48;2;{};{};{}m".format(bg[0], bg[1], bg[2]))
+    else:
+       # translate rgb colour to closest coulor in 256 bit xterm pallet
+       fg_clr = ((fg[0] << 16) + (fg[1] << 8) + fg[2])
+       bg_clr = ((bg[0] << 16) + (bg[1] << 8) + bg[2])
+       fg_clr = rgb2short("{0:0{1}x}".format(fg_clr,6))
+       bg_clr = rgb2short("{0:0{1}x}".format(bg_clr,6))
+       sys.stdout.write("\033[38;5;{}m".format(fg_clr[0]))
+       sys.stdout.write("\033[48;5;{}m".format(bg_clr[0]))
+    print_sl(char)
+    
 # print to console without new line
 def print_sl(value):
     print(value, sep='', end='', flush=True)
-
-# print to console with reverse characters
-def print_char(char, reverse):
-    if reverse and invert_enabled:
-        sys.stdout.write(REVERSE)        
-        print_sl(char)
-    else:
-        sys.stdout.write(RESET)
-        print_sl(char)    
-
+ 
 # match the image block to the font block & output the unicode character
 # to the console & text buffer
 def match_blocks():
     text = ""
+    
     for num, image in enumerate(image_blocks, start=1):
     
         # output a new console line every 16 blocks
-        if ((num % 16) == 1):
+        if ( ((num % 16) == 1) and (num !=1)):
             sys.stdout.write(RESET)
             print("")
             text += "\r\n"
 
         # get the hash & inverse hash for the block we're matching
+        image = image.convert("RGB")
         img_hash = average_hash(image)
         img_hash_inv = average_hash(ImageOps.invert(image))
 
         # setup some default values for the match
         best_score = sys.maxsize
-        char = ""
-        invert = False
+        char_code = 0
         
         # match the block or it's inverse to a character in the font
-        for key in font_hashes:
-            char_hash = font_hashes[key]
+        for key in font_blocks:
+            char_hash = font_blocks[key].hash
             # match against font block
             distance = hash_distance(char_hash, img_hash)
             if distance < best_score:
                 best_score = distance
-                char = chr(key)
-                invert = False
+                char_code = key
             # match against reversed font block    
             distance = hash_distance(char_hash, img_hash_inv)
             if distance < best_score:
                 best_score = distance
-                char = chr(key)
-                invert = True
-            
-        # special case - try to work out whether a space 
-        # character should be rendered with reverse video
-        if (ord(char) == 160):
-            clrs = image.getcolors()
-            if (clrs[0][1] < 30):
-                invert = True
+                char_code = key
+  
+        text += chr(char_code)
+        fg = image.getpixel(font_blocks[char_code].fg_pixel)
+        bg = image.getpixel(font_blocks[char_code].bg_pixel)
+        print_color(chr(char_code), fg, bg)
 
-        print_char(char, invert) # output char to console
-        text += char
-
-    #reset the console color    
+    # reset the console color    
     sys.stdout.write(RESET)
     return text
 
@@ -187,7 +206,6 @@ if not os.path.isfile(filename):
     exit()
 
 # get flags from args
-invert_enabled = not "--noinvert" in sys.argv
 debug = "--debug" in sys.argv
 
 # in debug mode create the dirs to store the punk & font blocks 
@@ -197,19 +215,25 @@ if debug:
     if not os.path.isdir(dir_punk_blocks):  
         os.makedirs(dir_punk_blocks)
 
+if platform.system() == 'Windows':
+    print("") # need an extra line on windows
+
+
 # create image bloack form the font 
 create_font_blocks()           
 # split the DOS punk image into blocks
 create_punk_blocks(filename)  
 # match the blocks (& output to console) 
-punk_text = match_blocks().encode('utf-8')               
+result = match_blocks()
+punk_text = result[0]
+color_map = result[1]              
 
 # save the output to a text file
 text_filename = os.path.splitext(filename)[0]+".txt"
 f = open(text_filename,"wb+")
-f.write(punk_text)
+f.write(punk_text.encode('utf-8'))
 f.close()
 
 print("")  
 if not platform.system() == 'Windows':
-    print("") # need an extra line on windows
+    print("") # need an extra line on osx
