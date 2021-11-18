@@ -135,12 +135,10 @@ def print_color(char, fg, bg):
        sys.stdout.write("\033[48;2;{};{};{}m".format(bg[0], bg[1], bg[2]))
     else:
        # translate rgb colour to closest coulor in 256 bit xterm pallet
-       fg_clr = ((fg[0] << 16) + (fg[1] << 8) + fg[2])
-       bg_clr = ((bg[0] << 16) + (bg[1] << 8) + bg[2])
-       fg_clr = rgb2short("{0:0{1}x}".format(fg_clr,6))
-       bg_clr = rgb2short("{0:0{1}x}".format(bg_clr,6))
-       sys.stdout.write("\033[38;5;{}m".format(fg_clr[0]))
-       sys.stdout.write("\033[48;5;{}m".format(bg_clr[0]))
+       fg_clr = rgb2short(fg[0], fg[1], fg[2])
+       bg_clr = rgb2short(bg[0], bg[1], bg[2])
+       sys.stdout.write("\033[38;5;{}m".format(fg_clr))
+       sys.stdout.write("\033[48;5;{}m".format(bg_clr))
     print_sl(char)
     
 # print to console without new line
