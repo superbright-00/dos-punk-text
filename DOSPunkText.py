@@ -146,12 +146,28 @@ def print_color(char, fg, bg):
 # print to console without new line
 def print_sl(value):
     print(value, sep='', end='', flush=True)
- 
+
+# creates a dict to hold the metadata
+def create_metadata_dict():
+    rec = {}
+    rec["text"] = ""
+    rec["pallet"] = []
+    rec["fgColors"] = []
+    rec["bgColors"] = []
+    return(rec)
+
+# adds a colour to the pallet & returns the index
+def pallet_index(color, pallet):
+    if color not in pallet:
+        pallet.append(color)
+    return pallet.index(color)
+
 # match the image block to the font block & output the unicode character
 # to the console & text buffer
 def match_blocks():
     text = ""
-    
+    metadata = create_metadata_dict()
+
     for num, image in enumerate(image_blocks, start=1):
     
         # output a new console line every 16 blocks
@@ -184,13 +200,19 @@ def match_blocks():
                 char_code = key
   
         text += chr(char_code)
+        metadata["text"]+= chr(char_code)
         fg = image.getpixel(font_blocks[char_code].fg_pixel)
         bg = image.getpixel(font_blocks[char_code].bg_pixel)
+        fg_idx = pallet_index(fg, metadata["pallet"])
+        bg_idx = pallet_index(bg, metadata["pallet"])
+        metadata["fgColors"].append(fg_idx)
+        metadata["bgColors"].append(bg_idx)
+
         print_color(chr(char_code), fg, bg)
 
     # reset the console color    
     sys.stdout.write(RESET)
-    return text
+    return (text, metadata)
 
 # ----------------------------------------------------
 
@@ -225,14 +247,19 @@ create_font_blocks()
 create_punk_blocks(filename)  
 # match the blocks (& output to console) 
 result = match_blocks()
-punk_text = result[0]
-color_map = result[1]              
+text = result[0]
+metadata = result[1]              
 
 # save the output to a text file
 text_filename = os.path.splitext(filename)[0]+".txt"
 f = open(text_filename,"wb+")
-f.write(punk_text.encode('utf-8'))
+f.write(text.encode('utf-8'))
 f.close()
+
+# save metadata as json
+json_filename = os.path.splitext(filename)[0]+".json"
+with open(json_filename, 'w', encoding='utf-8') as f:
+    json.dump(metadata, f, ensure_ascii=False, separators=(',', ':'))
 
 print("")  
 if not platform.system() == 'Windows':
