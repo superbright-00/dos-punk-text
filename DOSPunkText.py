@@ -70,7 +70,9 @@ def get_pixel_by_color(image, color):
     for y in range(0, image.height):
         for x in range(0, image.width):
             if (image.getpixel((x,y)) == color):
-                return ((x,y))
+                # +4 to to choose a pixel not effected by any antialiasing if image has
+                # been resized, bit of a hack - there must be a better way to do this!
+                return ((x+4,y+4)) 
     return ((-1,-1))
 
 # Creates a font record
@@ -104,10 +106,16 @@ def create_font_blocks():
 def create_punk_blocks(filename):
     image = Image.open(filename).convert('RGB')
 
-    # check image is correct reolution
-    if (image.width != 1280) or (image.height != 1280):
-        print('Please supply the 1280x1280 image of your DOS Punk!')
+    # check image is square
+    if (image.width != image.height):
+        print('Image must have equal width & height')
         sys.exit()
+
+    # resize to 1280x1280 if required
+    if (image.width !=1280):
+        image = image.resize( (1280, 1280), Image.LANCZOS)
+        if debug:
+            image.save(f"{dir_punk_blocks}/image.png")
 
     # split image up into blocks
     block_num = 1
@@ -182,6 +190,7 @@ def match_blocks():
         # setup some default values for the match
         best_score = sys.maxsize
         char_code = 0
+        inverted = False
         
         # match the block or it's inverse to a character in the font
         for key in font_blocks:
@@ -191,11 +200,13 @@ def match_blocks():
             if distance < best_score:
                 best_score = distance
                 char_code = key
+                inverted = False
             # match against reversed font block    
             distance = hash_distance(char_hash, img_hash_inv)
             if distance < best_score:
                 best_score = distance
                 char_code = key
+                inverted = True
   
         text += chr(char_code)
         metadata["text"]+= chr(char_code)
@@ -207,6 +218,10 @@ def match_blocks():
         metadata["bgColors"].append(bg_idx)
 
         print_color(chr(char_code), fg, bg)
+        
+        if debug:
+            sys.stdout.write(RESET) 
+            print(f" Block:{num} Matched:{char_code} Score:{best_score} Inverted:{inverted}")
 
     # reset the console color    
     sys.stdout.write(RESET)
@@ -238,7 +253,6 @@ if debug:
 if platform.system() == 'Windows':
     print("") # need an extra line on windows
 
-
 # create image bloack form the font 
 create_font_blocks()           
 # split the DOS punk image into blocks
@@ -250,9 +264,9 @@ metadata = result[1]
 
 # save the output to a text file
 text_filename = os.path.splitext(filename)[0]+".txt"
-f = open(text_filename,"wb+")
-f.write(text.encode('utf-8'))
-f.close()
+with open(text_filename,"wb+") as f:
+    f.write(text.encode('utf-8'))
+    f.close()
 
 # save metadata as json
 json_filename = os.path.splitext(filename)[0]+".json"
