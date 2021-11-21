@@ -70,9 +70,9 @@ def get_pixel_by_color(image, color):
     for y in range(0, image.height):
         for x in range(0, image.width):
             if (image.getpixel((x,y)) == color):
-                # +4 to to choose a pixel not effected by any antialiasing if image has
+                # +5 to to choose a pixel not effected by any antialiasing if image has
                 # been resized, bit of a hack - there must be a better way to do this!
-                return ((x+4,y+4)) 
+                return ((x+5,y+5)) 
     return ((-1,-1))
 
 # Creates a font record
@@ -113,7 +113,14 @@ def create_punk_blocks(filename):
 
     # resize to 1280x1280 if required
     if (image.width !=1280):
-        image = image.resize( (1280, 1280), Image.LANCZOS)
+        if optimize:
+            # optimize for character matching
+            image = image.resize( (1280, 1280), Image.LANCZOS)
+        else:
+            # optimize for color matching
+            image = image.resize( (1280, 1280), Image.NONE)
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(4)
         if debug:
             image.save(f"{dir_punk_blocks}/image.png")
 
@@ -241,6 +248,7 @@ if not os.path.isfile(filename):
     exit()
 
 # get flags from args
+optimize = "--optimize" in sys.argv
 debug = "--debug" in sys.argv
 
 # in debug mode create the dirs to store the punk & font blocks 

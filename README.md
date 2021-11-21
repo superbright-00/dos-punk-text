@@ -20,6 +20,9 @@ pip install pillow
 
 For best results use [BlockZone](https://github.com/ansilove/BlockZone) as your console font. A copy of the BlockZone font is included in this repository.
 
+Use the original 1280 x 1280 DOS Punk image where possible. 
+For low res images use the --optimize flag to optimize for character matching over color matching.
+
 ## Usage
 
 ```bash
@@ -28,6 +31,9 @@ python DosPunkText.py "path/to/DosPunkImage.png"
 # display the DOS Punk image as text in the console
 # and export text & colour map to JSON file
 python DOSPunkText.py DOSPunk132.png
+
+# optimize character matching over color matching for low res images
+python DOSPunkText.py DOSPunk132.png --optimize
 
 # save the DOS Punk & font image blocks used during the matching process
 python DOSPunkText.py DOSPunk132.png --debug
