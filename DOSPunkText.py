@@ -3,6 +3,7 @@ import sys
 import platform
 import types
 import json
+import csv
 from PIL import Image, ImageOps, ImageFont, ImageDraw, ImageEnhance 
 if sys.platform != 'Windows':
     from colortrans import rgb2short
@@ -11,6 +12,9 @@ char_font = ImageFont.truetype("BlockZone.ttf", 160) # font used for matching
 font_blocks = {}      # dictionary - key = unicode char, value = font record (hash, fg, bg)
 image_blocks = []     # array of images - the dos punk image split into charcter blocks 
 debug = False         # save the font & image blocks created for debugging
+errors = []
+block_errors = []
+csv_header = []
 
 dirname = os.path.dirname(__file__)
 dir_punk_blocks = os.path.join(dirname, 'punk-blocks')
@@ -100,16 +104,23 @@ def create_font_blocks():
     image = image.convert("L")
     font_blocks[0x00A0] = create_font_record(image)
         
-
 # split the DOS punk image up into chracter blocks
 # width 80, height 160 in 
 def create_punk_blocks(filename):
+    
+    image_blocks.clear() 
+
     image = Image.open(filename).convert('RGB')
+
+    if ((image.width != 208) or (image.height != 208)) and ((image.width != 1280) or (image.height != 1280)):
+        image = image.resize( (208, 208), Image.LANCZOS)
+        errors.append(f"{filename} not 208x208 pixels")
 
     # check image is square
     if (image.width != image.height):
-        print('Image must have equal width & height')
-        sys.exit()
+        image = image.resize( (208, 208), Image.LANCZOS)
+        errors.append(f"{filename} does not have equal width & height")
+        
 
     # resize to 1280x1280 if required
     if (image.width !=1280):
@@ -141,6 +152,15 @@ def check_relative_filename(filename):
        if os.path.isfile(relative):
            filename = relative
     return(filename)
+
+# return full dir path 
+def check_relative_dir(path):
+    result = path
+    if not os.path.isdir(path):
+       relative = os.path.join(dirname, path)
+       if os.path.isdir(path):
+           result = relative
+    return(result)
 
 # print coloured chracter to the console
 def print_color(char, fg, bg):
@@ -180,6 +200,9 @@ def pallet_index(color, pallet):
 def match_blocks():
     text = ""
     metadata = create_metadata_dict()
+    mutant = False
+    check = False
+    block_errors.clear()
 
     for num, image in enumerate(image_blocks, start=1):
     
@@ -224,15 +247,37 @@ def match_blocks():
         metadata["fgColors"].append(fg_idx)
         metadata["bgColors"].append(bg_idx)
 
+        char_freq[char_code]+=1
+
+        if (char_code != 0x00A0) and (fg == bg):
+            mutant = True
+
+        if (char_code == 0x00A0) and (best_score > 300):
+            check = True
+
+        #if best_score > 20:
+        #    block_errors.append(f"check block {num}: x:{num % 16} y:{(num // 16)+1}")
+
         print_color(chr(char_code), fg, bg)
         
         if debug:
             sys.stdout.write(RESET) 
-            print(f" Block:{num} Matched:{char_code} Score:{best_score} Inverted:{inverted}")
+            print(f" Block:{num} Matched:{char_code} Score:{best_score} Inverted:{inverted} Check:{check}")
 
     # reset the console color    
     sys.stdout.write(RESET)
-    return (text, metadata)
+    return (text, metadata, mutant, check)
+
+def get_csv_header():
+    result = []
+    result.append("Character\r\nPunk #")
+    for key in font_blocks:
+        #s = "{}/r/n{}".format(chr(key),key)
+        s = "{}".format(chr(key))
+        #s.encode('utf-8')
+        result.append(s)
+    result.append('MUTANT')
+    return result
 
 # ----------------------------------------------------
 
@@ -241,10 +286,10 @@ def match_blocks():
 if platform.system() == 'Windows':
     os.system('COLOR') 
 
-# get the filename from args
-filename = check_relative_filename(sys.argv[1])
-if not os.path.isfile(filename):
-    print(f"file not found: {filename}")
+# get the dir from args
+path = check_relative_dir(sys.argv[1])
+if not os.path.isdir(path):
+    print(f"dir not found: {path}")
     exit()
 
 # get flags from args
@@ -260,27 +305,82 @@ if debug:
 
 if platform.system() == 'Windows':
     print("") # need an extra line on windows
-
+    
 # create image bloack form the font 
-create_font_blocks()           
-# split the DOS punk image into blocks
-create_punk_blocks(filename)  
-# match the blocks (& output to console) 
-result = match_blocks()
-text = result[0]
-metadata = result[1]              
+create_font_blocks()   
 
-# save the output to a text file
-text_filename = os.path.splitext(filename)[0]+".txt"
-with open(text_filename,"wb+") as f:
-    f.write(text.encode('utf-8'))
-    f.close()
+file_count = 1
 
-# save metadata as json
-json_filename = os.path.splitext(filename)[0]+".json"
-with open(json_filename, 'w', encoding='utf-8') as f:
-    json.dump(metadata, f, ensure_ascii=False, separators=(',', ':'))
+#  create the csv file & write the header
+csv_filename = os.path.join(path, 'DOSPunks.csv')
+csv_file = open(csv_filename, "w+", encoding='UTF-8', newline='')
+writer = csv.writer(csv_file)
+writer.writerow(get_csv_header())
 
-print("")  
-if not platform.system() == 'Windows':
-    print("") # need an extra line on osx
+files = os.listdir(path)
+for file in files:
+    if file.endswith(".png"):
+
+        print("")  
+        print("{} - {}".format(file_count, file))
+        file_count+=1
+
+        # create a char frquency lookup
+        char_freq = {}
+        for key in font_blocks:
+            char_freq[key] = 0 
+
+        filename = os.path.join(path, file)
+        # split the DOS punk image into blocks
+        create_punk_blocks(filename) 
+        # match the blocks (& output to console) 
+        result = match_blocks()
+        text = result[0]
+        metadata = result[1]              
+
+        # create csv data line & write it to the file
+        id = ''
+        for c in file:
+            if c.isdigit():
+                id += c
+        data = list(char_freq.values()) 
+        data.insert(0, id) # Punk ID
+        if result[2]:
+            data.append(1)
+        else:
+            data.append(0)
+
+        writer.writerow(data) # data
+
+        #  save the output to a text file
+        #text_filename = os.path.splitext(filename)[0]+".txt"
+        #with open(text_filename,"wb+") as f:
+        #    f.write(text.encode('utf-8'))
+        #    f.close()
+
+        # save metadata as json
+        #json_filename = os.path.splitext(filename)[0]+".json"
+        #with open(json_filename, 'w', encoding='utf-8') as f:
+        #    json.dump(metadata, f, ensure_ascii=False, separators=(',', ':'))
+        
+        print("")
+        if result[2]:
+            print("-- POSSIBLE MUTANT! --")
+            errors.append(f"Mutant {file}")
+        if result[3]:
+            print("-- CHECK --")
+            errors.append(f"Check {file}")
+        
+        for e in block_errors:
+            print("Error :"+e)
+        
+        if not platform.system() == 'Windows':
+            print("") # need an extra line on osx
+
+csv_file.close() 
+
+print("")
+print("### PROCESSING COMPLETE ###")
+
+for e in errors:
+    print("Error :"+e)
