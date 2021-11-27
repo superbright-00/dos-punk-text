@@ -30,9 +30,10 @@ def hash_distance(hash1, hash2):
 # Compute the average hash of the given image.
 def average_hash(image, hash_size=80):
     
-    # resize image and convert it to grayscal.
-    image = image.resize((hash_size, hash_size), Image.ANTIALIAS)
+    # resize image and convert it to grayscale.
+    image = ImageOps.autocontrast(image)
     image = ImageOps.grayscale(image)
+    image = image.resize((hash_size, hash_size), Image.ANTIALIAS)
     
     pixels = list(image.getdata())
     avg = sum(pixels) / len(pixels)
