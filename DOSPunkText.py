@@ -11,6 +11,8 @@ char_font = ImageFont.truetype("BlockZone.ttf", 160) # font used for matching
 font_blocks = {}      # dictionary - key = unicode char, value = font record (hash, fg, bg)
 image_blocks = []     # array of images - the dos punk image split into charcter blocks 
 debug = False         # save the font & image blocks created for debugging
+warnings = []         # block match warnings
+original_image = False
 
 dirname = os.path.dirname(__file__)
 dir_punk_blocks = os.path.join(dirname, 'punk-blocks')
@@ -33,14 +35,14 @@ def average_hash(image, hash_size=80):
     # resize image and convert it to grayscale.
     image = ImageOps.autocontrast(image)
     image = ImageOps.grayscale(image)
-    image = image.resize((hash_size, hash_size), Image.ANTIALIAS)
     
     pixels = list(image.getdata())
     avg = sum(pixels) / len(pixels)
 
     # Compute the hash based on each pixels value compared to the average.
     bits = "".join(map(lambda pixel: '1' if pixel > avg else '0', pixels))
-    hashformat = "0{hashlength}x".format(hashlength=hash_size ** 2 // 4)
+    hashformat = "0{hashlength}x".format(hashlength=(80 * 160) // 4)
+    
     return int(bits, 2).__format__(hashformat)
 
 # Compute the hamming distance between two images
@@ -99,8 +101,20 @@ def create_font_blocks():
     # add the space character back in
     image = create_char_image(0x00A0)
     image = image.convert("L")
-    font_blocks[0x00A0] = create_font_record(image)
-        
+    char_code = 0x00A0
+    font_blocks[char_code] = create_font_record(image)
+    if debug:
+        image.save(f"{dir_font_blocks}/{char_code}.png")
+
+# load font block images from a folder and store
+# the average hash of the image against the unicode
+def load_font_blocks():
+    files = os.listdir(dir_font_blocks)
+    for file in files:
+        if file.endswith(".png"):
+            image = Image.open(os.path.join(dir_font_blocks, file)).convert('L')
+            char_code = int(os.path.splitext(file)[0])
+            font_blocks[char_code] = create_font_record(image)
 
 # split the DOS punk image up into chracter blocks
 # width 80, height 160 in 
@@ -112,18 +126,9 @@ def create_punk_blocks(filename):
         print('Image must have equal width & height')
         sys.exit()
 
-    # resize to 1280x1280 if required
-    if (image.width !=1280):
-        if optimize:
-            # optimize for character matching
-            image = image.resize( (1280, 1280), Image.LANCZOS)
-        else:
-            # optimize for color matching
-            image = image.resize( (1280, 1280), Image.NONE)
-        enhancer = ImageEnhance.Sharpness(image)
-        image = enhancer.enhance(4)
-        if debug:
-            image.save(f"{dir_punk_blocks}/image.png")
+    if (image.width != 1280):
+        print('Please use the original 1280x1280 DOS Punk image')
+        sys.exit()
 
     # split image up into blocks
     block_num = 1
@@ -182,6 +187,8 @@ def match_blocks():
     text = ""
     metadata = create_metadata_dict()
 
+    error_threshold = 0
+    
     for num, image in enumerate(image_blocks, start=1):
     
         # output a new console line every 16 blocks
@@ -200,21 +207,31 @@ def match_blocks():
         char_code = 0
         inverted = False
         
-        # match the block or it's inverse to a character in the font
-        for key in font_blocks:
-            char_hash = font_blocks[key].hash
-            # match against font block
-            distance = hash_distance(char_hash, img_hash)
-            if distance < best_score:
-                best_score = distance
-                char_code = key
-                inverted = False
-            # match against reversed font block    
-            distance = hash_distance(char_hash, img_hash_inv)
-            if distance < best_score:
-                best_score = distance
-                char_code = key
-                inverted = True
+        # get the number of colours in the block
+        clrs = len(image.getcolors())
+        is_space = (clrs == 1)
+
+        if is_space:
+            # space character
+            char_code = 0x00A0
+            best_score = 0
+            inverted = False
+        else:
+            # match the block or it's inverse to a character in the font
+            for key in font_blocks:
+                char_hash = font_blocks[key].hash
+                # match against font block
+                distance = hash_distance(char_hash, img_hash)
+                if distance < best_score:
+                    best_score = distance
+                    char_code = key
+                    inverted = False
+                # match against reversed font block    
+                distance = hash_distance(char_hash, img_hash_inv)
+                if distance < best_score:
+                    best_score = distance
+                    char_code = key
+                    inverted = True
   
         text += chr(char_code)
         metadata["text"]+= chr(char_code)
@@ -227,6 +244,15 @@ def match_blocks():
 
         print_color(chr(char_code), fg, bg)
         
+        if (char_code != 0x00A0) and (fg == bg):
+            warnings.append(f"mutant block {num}: Score: {best_score} x:{num % 16} y:{(num // 16)+1}")
+
+        if (best_score > error_threshold):
+            warnings.append(f"check block {num}: Score: {best_score} x:{num % 16} y:{(num // 16)+1}")
+
+        if (char_code == 0x00A0) and (not is_space):
+            warnings.append(f"Block:{num} is not a space!")
+
         if debug:
             sys.stdout.write(RESET) 
             print(f" Block:{num} Matched:{char_code} Score:{best_score} Inverted:{inverted}")
@@ -262,8 +288,8 @@ if debug:
 if platform.system() == 'Windows':
     print("") # need an extra line on windows
 
-# create image bloack form the font 
-create_font_blocks()           
+# create image blocks form the font
+load_font_blocks()           
 # split the DOS punk image into blocks
 create_punk_blocks(filename)  
 # match the blocks (& output to console) 
@@ -285,3 +311,7 @@ with open(json_filename, 'w', encoding='utf-8') as f:
 print("")  
 if not platform.system() == 'Windows':
     print("") # need an extra line on osx
+
+# output any warnings to console
+for warning in warnings:
+    print("Warning :"+warning)
