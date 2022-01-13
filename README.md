@@ -35,6 +35,9 @@ python DOSPunkText.py DOSPunk132.png
 # optimize character matching over color matching for low res images
 python DOSPunkText.py DOSPunk132.png --optimize
 
+# use both space & full-block characters when matching
+python DOSPunkText.py DOSPunk132.png --matchfullblocks
+
 # save the DOS Punk & font image blocks used during the matching process
 python DOSPunkText.py DOSPunk132.png --debug
 

@@ -12,7 +12,7 @@ font_blocks = {}      # dictionary - key = unicode char, value = font record (ha
 image_blocks = []     # array of images - the dos punk image split into charcter blocks 
 debug = False         # save the font & image blocks created for debugging
 warnings = []         # block match warnings
-original_image = False
+main_bg_color = (255,255,255)
 
 dirname = os.path.dirname(__file__)
 dir_punk_blocks = os.path.join(dirname, 'punk-blocks')
@@ -89,6 +89,7 @@ def create_font_record(image):
 # create an image for each character in the font and store
 # the average hash of the image against the unicode 
 def create_font_blocks():
+    
     # create images of non-blank characters from the font
     for char_code in range(0x0021, 0x0266C):
       image = create_char_image(char_code)
@@ -98,10 +99,19 @@ def create_font_blocks():
           font_blocks[char_code] = create_font_record(image)
           if debug:
               image.save(f"{dir_font_blocks}/{char_code}.png")
-    # add the space character back in
+    
+    # add the space character back in - 0x00A0
     image = create_char_image(0x00A0)
     image = image.convert("L")
     char_code = 0x00A0
+    font_blocks[char_code] = create_font_record(image)
+    if debug:
+        image.save(f"{dir_font_blocks}/{char_code}.png")
+    
+    # add the full-block character back in - 0x2588
+    image = create_char_image(0x2588)
+    image = image.convert("L")
+    char_code = 0x2588
     font_blocks[char_code] = create_font_record(image)
     if debug:
         image.save(f"{dir_font_blocks}/{char_code}.png")
@@ -109,7 +119,17 @@ def create_font_blocks():
 # load font block images from a folder and store
 # the average hash of the image against the unicode
 def load_font_blocks():
+
+    if not os.path.isdir(dir_font_blocks):
+        print("Error loading font blocks, dir does not exist")
+        sys.exit()
+
     files = os.listdir(dir_font_blocks)
+
+    if (len(files) == 0):
+        print("Error loading font blocks, dir is empty")
+        sys.exit()
+
     for file in files:
         if file.endswith(".png"):
             image = Image.open(os.path.join(dir_font_blocks, file)).convert('L')
@@ -119,6 +139,9 @@ def load_font_blocks():
 # split the DOS punk image up into chracter blocks
 # width 80, height 160 in 
 def create_punk_blocks(filename):
+    
+    global main_bg_color
+    
     image = Image.open(filename).convert('RGB')
 
     # check image is square
@@ -129,6 +152,9 @@ def create_punk_blocks(filename):
     if (image.width != 1280):
         print('Please use the original 1280x1280 DOS Punk image')
         sys.exit()
+
+    # set the global main background colour of the image
+    main_bg_color = image.getpixel((0,0))
 
     # split image up into blocks
     block_num = 1
@@ -208,14 +234,18 @@ def match_blocks():
         inverted = False
         
         # get the number of colours in the block
-        clrs = len(image.getcolors())
-        is_space = (clrs == 1)
-
-        if is_space:
-            # space character
-            char_code = 0x00A0
+        clrs = image.getcolors()
+        is_single_color = (len(clrs) == 1)
+  
+        if is_single_color:
+            char_code = 0x00A0 # space character
             best_score = 0
             inverted = False
+
+            if match_full_blocks:  # if color is nothe the main background use a full-block char instead
+                if (clrs[0][1] != main_bg_color):
+                    char_code = 0x2588 # full block character
+            
         else:
             # match the block or it's inverse to a character in the font
             for key in font_blocks:
@@ -244,14 +274,17 @@ def match_blocks():
 
         print_color(chr(char_code), fg, bg)
         
-        if (char_code != 0x00A0) and (fg == bg):
+        # warn if space of full-block char with 2 different colours
+        if ((char_code != 0x00A0) and (char_code != 0x2588)) and (fg == bg):
             warnings.append(f"mutant block {num}: Score: {best_score} x:{num % 16} y:{(num // 16)+1}")
 
+        # warn if match didn't meet the error theshold
         if (best_score > error_threshold):
             warnings.append(f"check block {num}: Score: {best_score} x:{num % 16} y:{(num // 16)+1}")
 
-        if (char_code == 0x00A0) and (not is_space):
-            warnings.append(f"Block:{num} is not a space!")
+        # warn if matched a character but has single colour
+        if ((char_code == 0x00A0) or (char_code == 0x2588)) and (not is_single_color):
+            warnings.append(f"Block:{num} is not a single color!")
 
         if debug:
             sys.stdout.write(RESET) 
@@ -277,6 +310,7 @@ if not os.path.isfile(filename):
 # get flags from args
 optimize = "--optimize" in sys.argv
 debug = "--debug" in sys.argv
+match_full_blocks = "--matchfullblocks" in sys.argv
 
 # in debug mode create the dirs to store the punk & font blocks 
 if debug:
@@ -289,7 +323,7 @@ if platform.system() == 'Windows':
     print("") # need an extra line on windows
 
 # create image blocks form the font
-load_font_blocks()           
+load_font_blocks() 
 # split the DOS punk image into blocks
 create_punk_blocks(filename)  
 # match the blocks (& output to console) 
